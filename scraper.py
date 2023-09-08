@@ -18,6 +18,8 @@ class FwangoScraper:
         self.this_tournaments_react_number = 2
         self.quiet = False
         self.tournament_specific_team_player_mappings = {}
+        self.width = 1200
+        self.height = 1400
 
     def run(self, tournaments):
         # Set up ChromeDriver automatically
@@ -40,16 +42,16 @@ class FwangoScraper:
             print(f"Currently working on: {tourney_name} ({i + 1} out of {len(tournament_names)})")
 
             url = f"https://fwango.io/{tourney_name}"
-            driver.set_window_size(1200, 1400)  # Set window size
+            driver.set_window_size(self.width, self.height)  # Set window size
 
             print("Working on home page")
             self.process_home_page(driver, url, tourney_name, team_objects, tournament_objects)
 
             print("Working on results page")
-            self.process_results_page(driver, url, division_team_results, tourney_name)
+            # self.process_results_page(driver, url, division_team_results, tourney_name)
 
             print("Working on pool play page")
-            self.process_pool_play(driver, url, tourney_name, games)
+            # self.process_pool_play(driver, url, tourney_name, games)
 
             print("Working on bracket play page")
             self.process_bracket_play(driver, url, tourney_name, games, series)
@@ -454,22 +456,34 @@ class FwangoScraper:
         try:
             # Going to add a game_data object for each game in the bracket and a series object for each series
             driver.get(url)
-            time.sleep(1)
+            time.sleep(2)
             
             # Locate the bracket play button element
             bracket_play_button = driver.find_element(By.XPATH, "//*[@id=\"root\"]/span/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div/div/div/nav/ul[2]/li[4]/div/a/span/i")
             bracket_play_button.click()
             time.sleep(1)
-            
+            self.zoom_out(driver)
             dropdown_button = driver.find_element(By.CLASS_NAME, "select-input-container")
             draw_button = driver.find_element(By.ID, "screen-top-menu-select-container")
             # dropdown_button.click()
             # draw_button.send_keys(Keys.RETURN)
             self.bracket_play_helper(driver, dropdown_button, draw_button, all_games, all_series, tournament_name)
-        
+            self.zoom_in(driver)
         except Exception as e:
+            self.zoom_out(driver)
             if not self.quiet:
                 print(e)
+
+    def zoom_out(self, driver):
+        driver.set_window_size(800, 1200)
+        time.sleep(0.5)
+
+    def zoom_in(self, driver):
+        driver.set_window_size(self.width, self.height)
+        time.sleep(0.5)
+
+        
+            
 
     def bracket_play_helper(self, driver, dropdown_button, draw_button, all_games, all_series, tournament_name):
         
@@ -539,7 +553,7 @@ class FwangoScraper:
                     
                     # container = driver.find_element(By.CSS_SELECTOR, "#body-scroll > div > div > div > div.react-transform-component.TransformComponent-module_container__3NwNd > div > div > div > div")
                     
-                    # actions = ActionChains(driver)
+                    # actions = ActionChains(driver
                     # actions.move_to_element(container).send_keys(Keys.PAGE_DOWN).perform()
                     all_series.extend(series)
                     all_games.extend(games)
