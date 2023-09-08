@@ -25,6 +25,7 @@ class GameData:
     t2_points : Optional[int] = -5
     tournament_stage : Optional[str] = ""
     tournament_name : Optional[str] = ""
+    division: Optional[str] = ""
     
 
 @dataclass
