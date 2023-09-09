@@ -43,5 +43,6 @@ class TeamResultObject:
     result: Optional[int] = 0
     team_name: Optional[str] = ""
     wins: Optional[int] = 0
+    losses: Optional[int] = 0
     division: Optional[str] = ""
     tournament: Optional[str] = ""

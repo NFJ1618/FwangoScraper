@@ -12,14 +12,16 @@ import time
 from datatypes import TeamObject, TournamentData, GameData, SeriesData, TeamResultObject
 import re
 from selenium.common.exceptions import NoSuchElementException
+import os
 
 class FwangoScraper:
-    def __init__(self) -> None:        
+    def __init__(self, tourney_path) -> None:        
         self.this_tournaments_react_number = 2
         self.quiet = False
         self.tournament_specific_team_player_mappings = {}
         self.width = 1200
         self.height = 1400
+        self.tourney_path = tourney_path
 
     def run(self, tournaments):
         # Set up ChromeDriver automatically
@@ -27,15 +29,17 @@ class FwangoScraper:
 
         tournament_names = tournaments
 
-        team_objects = []
-        division_team_results = []
-        games = []
-        series = []
-        tournament_objects = []
+
 
         program_start_time = time.time()
 
         for i, tourney_name in enumerate(tournament_names):
+            team_objects = []
+            division_team_results = []
+            games = []
+            series = []
+            tournament_objects = []
+
             start_time = time.time()
             self.tournament_specific_team_player_mappings[tourney_name] = {}
 
@@ -48,14 +52,26 @@ class FwangoScraper:
             self.process_home_page(driver, url, tourney_name, team_objects, tournament_objects)
 
             print("Working on results page")
-            # self.process_results_page(driver, url, division_team_results, tourney_name)
+            self.process_results_page(driver, url, division_team_results, tourney_name)
 
             print("Working on pool play page")
-            # self.process_pool_play(driver, url, tourney_name, games)
+            self.process_pool_play(driver, url, tourney_name, games)
 
             print("Working on bracket play page")
             self.process_bracket_play(driver, url, tourney_name, games, series)
 
+
+
+            # print_data(team_objects, division_team_results, games, series)
+
+            # I'm assuming you have write_data_to_csv function defined elsewhere
+            os.makedirs(f"{self.tourney_path}/{tourney_name}", exist_ok=True)
+            self.write_data_to_csv("teamObjects", f"{self.tourney_path}/{tourney_name}/teamObjects.csv", team_objects)
+            self.write_data_to_csv("divisionTeamResults", f"{self.tourney_path}/{tourney_name}/divisionTeamResults.csv", division_team_results)
+            self.write_data_to_csv("games", f"{self.tourney_path}/{tourney_name}/games.csv", games)
+            self.write_data_to_csv("series", f"{self.tourney_path}/{tourney_name}/series.csv", series)
+            self.write_data_to_csv("tournaments", f"{self.tourney_path}/tournaments.csv", tournament_objects)
+            
             end_time = time.time()  # Capture end timeRF
             elapsed_time = end_time - start_time  # Calculate elapsed time
 
@@ -64,16 +80,7 @@ class FwangoScraper:
             print(f"{len(games)} games")
             print(f"{len(series)} series")
             print(f"Iteration took {elapsed_time * 1000} milliseconds")
-
-        # print_data(team_objects, division_team_results, games, series)
-
-        # I'm assuming you have write_data_to_csv function defined elsewhere
-        self.write_data_to_csv("teamObjects", "teamObjects.csv", team_objects)
-        self.write_data_to_csv("divisionTeamResults", "divisionTeamResults.csv", division_team_results)
-        self.write_data_to_csv("games", "games.csv", games)
-        self.write_data_to_csv("series", "series.csv", series)
-        self.write_data_to_csv("tournaments", "tournaments.csv", tournament_objects)
-
+            
         program_end_time = time.time()  # Capture end time
         program_elapsed_time = program_end_time - program_start_time  # Calculate elapsed time
 
@@ -108,7 +115,8 @@ class FwangoScraper:
             elif dataset_name == "tournaments":
                 headers = ["Tournament Name", "URL", "Date"]
 
-            writer.writerow(headers)
+            if dataset_name != "tournaments":
+                writer.writerow(headers)
 
             # Write data rows
             for data in dataset:
@@ -120,6 +128,10 @@ class FwangoScraper:
                     row = [data.team_name, str(data.wins), str(data.losses), data.result, data.division, data.tournament]
                 elif isinstance(data, GameData):
                     if not (data.team1 and data.team2):
+                        continue
+                    if f"{data.division}_{data.team1}" not in self.tournament_specific_team_player_mappings[data.tournament_name]:
+                        continue
+                    if f"{data.division}_{data.team2}" not in self.tournament_specific_team_player_mappings[data.tournament_name]:
                         continue
                     t1p1, t1p2 = self.tournament_specific_team_player_mappings[data.tournament_name][f"{data.division}_{data.team1}"]
                     t2p1, t2p2 = self.tournament_specific_team_player_mappings[data.tournament_name][f"{data.division}_{data.team2}"]
@@ -213,13 +225,14 @@ class FwangoScraper:
         for i in divisions:
             name, num = i.split('\n')
             if name.lower() == 'free agent':
-                continue
+                break
             num = int(num.strip('()'))
             divs.append(name)
             number_in_div.append(num)
             players = []
             for i in range(num):
-                players.append(player_team_names.pop())
+                if player_team_names:
+                    players.append(player_team_names.pop())
             split.append(players)
         return divs, split
 
@@ -329,15 +342,12 @@ class FwangoScraper:
                     losses = self.extract_number(parts[1])
                     this_result.wins = wins
                     this_result.losses = losses
-            except:
-                pass
+            except Exception as e:
+                if not self.quiet:
+                    print(e)
             this_result.division = division
             this_result.tournament = tournament
             team_results.append(this_result)
-
-    # This method was not provided, but I assume it's a simple method to extract a number from a string.
-    def extract_number(s):
-        return int(''.join(filter(str.isdigit, s)))
 
     def process_pool_play(self, driver, url, tournament_name, games):
         try:
@@ -417,13 +427,13 @@ class FwangoScraper:
 
         return non_unique_combinations
 
-    def extract_number(input_str):
+    def extract_number(self, input_str):
         matches = re.findall(r'\d+', input_str)
         if matches:
             return int(matches[0])
         return 0
 
-    def get_pool_play_data(driver, games, tournament_name, division):
+    def get_pool_play_data(self, driver, games, tournament_name, division):
         team_elements = driver.find_elements(By.CLASS_NAME, "teams-container")
         point_elements = driver.find_elements(By.CLASS_NAME, "games-container")
 
@@ -636,7 +646,7 @@ class FwangoScraper:
 
 
 if __name__ == "__main__":
-    scraper = FwangoScraper()
+    scraper = FwangoScraper("sts")
     scraper.run([
             "saltlakecity2023",
             # "richmond2023",
