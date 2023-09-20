@@ -26,18 +26,37 @@ class Ratings:
         return self.ratings.items()
 
 class Model:
-    def __init__(self, file, points: bool, learning_rate = 5, rating_regularization = 0.001, decay=1, test_size=0.1, k=0.1, a=46, test=True):
+    def __init__(self, file, points: bool, learning_rate = 5, rating_regularization = 0.001, decay=1, test_size=0.1, k=0.1, a=46, test=True, game_reg=True, pow_factor=100):
         self.test = test
         self.ratings = Ratings()
         self.lr = learning_rate
         self.decay = decay
+        self.pow_factor = pow_factor
         self.k=0.1
         self.a=46
+        self.game_reg = game_reg
+        if not self.game_reg:
+            self.k = 0
         if points:
-            self.lr = 5
+            self.lr = 1
         else:
             self.lr = 0.1
             
+        self.weights = {
+            'Win': {
+                'Top': 1, 
+                'High': 0.8,
+                'Medium': 0.6,
+                'Low': 0.4
+            },
+            'Loss': {
+                'Top': 0.6, 
+                'High': 0.7,
+                'Medium': 0.8,
+                'Low': 1
+            }
+        }        
+    
         self.points = points
         self.rate_reg = rating_regularization
         self.games = {
@@ -48,7 +67,7 @@ class Model:
             self.data = pd.read_csv(f)
     
         self.X = [i for i in zip(self.data['Players 1'], self.data['Players 2'])]
-        self.y = [i for i in zip(self.data['New Score 1'], self.data['New Score 2'])]
+        self.y = [i for i in zip(self.data['New Score 1'], self.data['New Score 2'], self.data['Category'])]
 
         if self.test:
             self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=test_size)
@@ -71,7 +90,7 @@ class Model:
         return 1/(1+np.exp(-coef*x))
 
     def predict(self, team1_p1, team1_p2, team2_p1, team2_p2):
-        pow_factor=100
+        pow_factor=self.pow_factor
         ep1 = ((1/(1+pow(10, (team2_p1-team1_p1)/pow_factor)))+(1/(1+pow(10, (team2_p2-team1_p1)/pow_factor))))/2
         ep2 = ((1/(1+pow(10, (team2_p1-team1_p2)/pow_factor)))+(1/(1+pow(10, (team2_p2-team1_p2)/pow_factor))))/2
         ep3 = ((1/(1+pow(10, (team1_p1-team2_p1)/pow_factor)))+(1/(1+pow(10, (team1_p2-team2_p1)/pow_factor))))/2
@@ -90,7 +109,7 @@ class Model:
         lower = min(a)
         return factor * higher + (1-factor) * lower
 
-    def update_ratings(self, team1_p1, team1_p2, team2_p1, team2_p2, predicted, actual):
+    def update_ratings(self, team1_p1, team1_p2, team2_p1, team2_p2, predicted, actual, category):
         error = actual - predicted
         # Modify learning rate based on outcome and prediction
         magnitude = abs(predicted - 0.5)  # How close the prediction is to being uncertain
@@ -101,11 +120,18 @@ class Model:
             magnitude_multiplier = 1 - magnitude  # Decrease the magnitude if the difference is smaller
         
         dynamic_lr = self.lr * magnitude_multiplier
+        
+        if actual > 0.5:
+            team1_weight = self.weights['Win'][category]
+            team2_weight = self.weights['Loss'][category]
+        else:
+            team2_weight = self.weights['Win'][category]
+            team1_weight = self.weights['Loss'][category]
 
-        self.ratings[team1_p1] = self.ratings[team1_p1] + dynamic_lr * error
-        self.ratings[team1_p2] = self.ratings[team1_p2] + dynamic_lr * error
-        self.ratings[team2_p1] = self.ratings[team2_p1] - dynamic_lr * error
-        self.ratings[team2_p2] = self.ratings[team2_p2] - dynamic_lr * error
+        self.ratings[team1_p1] = self.ratings[team1_p1] + dynamic_lr * error * team1_weight
+        self.ratings[team1_p2] = self.ratings[team1_p2] + dynamic_lr * error * team1_weight
+        self.ratings[team2_p1] = self.ratings[team2_p1] - dynamic_lr * error * team2_weight
+        self.ratings[team2_p2] = self.ratings[team2_p2] - dynamic_lr * error * team2_weight
         return error
 
 
@@ -122,7 +148,7 @@ class Model:
             train_correct = 0
             train_num = 0
             for match, result in zip(self.X_train, self.y_train):
-                team1, team2, team1_score, team2_score = match[0], match[1], int(result[0]), int(result[1])
+                team1, team2, team1_score, team2_score, category = match[0], match[1], int(result[0]), int(result[1]), result[2]
                 team1_p1, team1_p2 = team1.split(', ')
                 team2_p1, team2_p2 = team2.split(', ')
 
@@ -135,7 +161,7 @@ class Model:
                     preds = self.predict(self.ratings[team1_p1], self.ratings[team1_p2], self.ratings[team2_p1], self.ratings[team2_p2])
                     pred = preds[0]
                     outcome = team1_score
-                train_loss += np.abs(self.update_ratings(team1_p1, team1_p2, team2_p1, team2_p2, pred, outcome))
+                train_loss += np.abs(self.update_ratings(team1_p1, team1_p2, team2_p1, team2_p2, pred, outcome, category))
                 rounded_pred = self.rounds(pred)
                 processed_outcome = 1 if team1_score > team2_score else 0
                 if rounded_pred == processed_outcome:
@@ -193,7 +219,7 @@ class Model:
 
 
 if __name__ == '__main__':
-    points = False
+    points = True
     if points:
         infile = 'final_processed_points.csv'
         outfile = 'points_ratings.csv'
@@ -202,6 +228,6 @@ if __name__ == '__main__':
         outfile = 'wins_ratings.csv'
     
     
-    model = Model(infile, points=points, k=0.03, a=150, test=False)
+    model = Model(infile, points=points, k=0.04, a=100, test=True, game_reg=True)
     model.train(200)
     model.output(outfile)
