@@ -3,6 +3,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 import time
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
@@ -11,15 +12,19 @@ import csv
 import time
 from datatypes import TeamObject, TournamentData, GameData, SeriesData, TeamResultObject
 import re
-from selenium.common.exceptions import NoSuchElementException
 import os
+
+#setTimeout(() => { debugger; }, 5000)
+
+POOL_PLAY_XPATH = "//*[@id='root']/span/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div/div/div/nav/ul[2]/li[3]/div/a"
+BRACKET_XPATH = "//*[@id=\"root\"]/span/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div/div/div/nav/ul[2]/li[4]/div/a/span/i"
 
 class FwangoScraper:
     def __init__(self, tourney_path) -> None:        
         self.this_tournaments_react_number = 2
         self.quiet = False
         self.tournament_specific_team_player_mappings = {}
-        self.width = 1200
+        self.width = 1450
         self.height = 1400
         self.tourney_path = tourney_path
 
@@ -355,7 +360,7 @@ class FwangoScraper:
             time.sleep(2)
 
             # Locate the pool play button element
-            pool_play_button = driver.find_element(By.XPATH, "//*[@id='root']/span/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div/div/div/nav/ul[2]/li[3]/div/a")
+            pool_play_button = driver.find_element(By.XPATH, POOL_PLAY_XPATH)
             pool_play_button.click()
             time.sleep(1)
 
@@ -469,23 +474,31 @@ class FwangoScraper:
             time.sleep(2)
             
             # Locate the bracket play button element
-            bracket_play_button = driver.find_element(By.XPATH, "//*[@id=\"root\"]/span/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div/div/div/nav/ul[2]/li[4]/div/a/span/i")
+            bracket_play_button = driver.find_element(By.XPATH, BRACKET_XPATH)
             bracket_play_button.click()
             time.sleep(1)
             self.zoom_out(driver)
-            dropdown_button = driver.find_element(By.CLASS_NAME, "select-input-container")
-            draw_button = driver.find_element(By.ID, "screen-top-menu-select-container")
+            time.sleep(0.1)
+            dropdown_button, draw_button = driver.find_elements(By.CLASS_NAME, "select-input-container")
+            
             # dropdown_button.click()
             # draw_button.send_keys(Keys.RETURN)
             self.bracket_play_helper(driver, dropdown_button, draw_button, all_games, all_series, tournament_name)
-            self.zoom_in(driver)
+            # self.zoom_in(driver)
         except Exception as e:
-            self.zoom_out(driver)
+            # self.zoom_out(driver)
             if not self.quiet:
                 print(e)
 
     def zoom_out(self, driver):
-        driver.set_window_size(800, 1200)
+        try:
+            menu = driver.find_element(By.CLASS_NAME, "IconButtonBase-sc-g1y1-0.IconButtonSolid-sc-q6gfks-0.gJLpLb.jGWydz")
+            menu.click()
+            symmetric = driver.find_element(By.CLASS_NAME, "DropdownMenu__MenuItem-sc-1rahj45-3.bkppMm")
+            symmetric.click()
+        except:
+            pass
+        # driver.set_window_size(1800, 1200)
         time.sleep(0.5)
 
     def zoom_in(self, driver):
@@ -504,11 +517,19 @@ class FwangoScraper:
 
 
             while element_found:
+
                 element_id = f"react-select-{self.this_tournaments_react_number}-option-{div_index}"
                 
                 #
-                
+                # try:
+                #     dropdown_button, draw_button = driver.find_elements(By.CLASS_NAME, "select-input-container")
+                # except:
+                #     if div_index == 10:
+                #         break
+                #     div_index += 1
+                #     continue
                 #
+            
                 ### USE SELECT OBJECT -. 
                 
                 try:
@@ -517,12 +538,15 @@ class FwangoScraper:
                     time.sleep(0.1)
 
                     option_element = driver.find_element(By.ID, element_id)
+                    time.sleep(0.1)
                     
                     #
                     
                     #
-                    
-                    division = option_element.text
+                    try:
+                        division = option_element.text
+                    except:
+                        continue
                     
                     games = []
                     series = []
@@ -531,17 +555,21 @@ class FwangoScraper:
                     
                     if division.lower() == "free agent":
                         continue
-
-                    option_element.click()
+                    
+                    try:
+                        option_element.click()
+                    except:
+                        continue
                     time.sleep(1)
 
-                    
+                    self.zoom_out(driver)
                     for bracket_index in range(0, 2):
                         second_element_found = True
                         draw_index = 0
                         while second_element_found:
-                            second_element_id = f"react-select-{self.this_tournaments_react_number+1}-option-{bracket_index}-{draw_index}"  
+                            second_element_id = f"react-select-{self.this_tournaments_react_number+1}-option-{bracket_index}-{draw_index}" 
                             try:
+                                dropdown_button, draw_button = driver.find_elements(By.CLASS_NAME, "select-input-container") 
                                 draw_button.click()
                                 time.sleep(0.1)
                                 second_option_element = driver.find_element(By.ID, second_element_id)
@@ -556,6 +584,8 @@ class FwangoScraper:
                             except NoSuchElementException:
                                 second_element_found = False
                                 draw_button.click()
+                            except:
+                                break
 
                     # Need to scroll out a bit to see all series
                     # start_time = time.time()
@@ -569,7 +599,7 @@ class FwangoScraper:
                     all_games.extend(games)
 
                     div_index += 1
-                except NoSuchElementException:
+                except:
                     element_found = False
         except Exception as e:
             if not self.quiet:
@@ -577,79 +607,87 @@ class FwangoScraper:
 
 
     def process_draw(self, driver, tournament_name, division):
+        
         games, series = [], []
-        rounds = driver.find_elements(By.CLASS_NAME, "OneSidedBracketstyle__BracketDrawColumnWrapper-sc-1fhx3vb-1")
+        
+        try:
+            container = driver.find_element(By.CLASS_NAME, "Bracketsstyle__BracketDrawContainer-sc-vcines-2.iSmTud")
+            rounds = driver.find_elements(By.CLASS_NAME, "Bracketsstyle__BracketDrawColumn-sc-vcines-6.eHosNn")
+            titles = container.find_elements(By.CLASS_NAME, "title")
 
-        for round_elem in rounds:
-            current_round = round_elem.find_element(By.CLASS_NAME, "title").text
-            series_elements = round_elem.find_elements(By.CLASS_NAME, "Matchstyle__BracketMatchContainer-sc-18us5a1-2")
 
-            is_final = True
-            for series_element in series_elements:
-                if current_round == "Final" and not is_final:
-                    current_round = "Third Place"
-                else:
-                    is_final = False
+            for round_elem, title in zip(rounds, titles):
+                current_round = title.text
+                series_elements = round_elem.find_elements(By.CLASS_NAME, "Matchstyle__BracketMatchContainer-sc-18us5a1-2")
 
-                try:
-                    team_name_elements = series_element.find_elements(By.CLASS_NAME, "team-name")
-                except Exception:
-                    continue
+                is_final = True
+                for series_element in series_elements:
+                    if current_round == "Final" and not is_final:
+                        current_round = "Third Place"
+                    else:
+                        is_final = False
 
-                try:
-                    score_elements = series_element.find_element(By.CLASS_NAME, "games-container").find_elements(By.CSS_SELECTOR, "[type='number']")
-                except Exception:
-                    continue
-
-                team1 = team_name_elements[0].text
-                team2 = team_name_elements[1].text
-
-                t1_scores = []
-                t2_scores = []
-
-                for k, score_element in enumerate(score_elements):
                     try:
-                        score = int(score_element.get_attribute("value"))
-                        if k % 2 == 0:
-                            t1_scores.append(score)
-                        else:
-                            t2_scores.append(score)
+                        team_name_elements = series_element.find_elements(By.CLASS_NAME, "team-name")
                     except Exception:
-                        score = -1
-                        if k % 2 == 0:
-                            t1_scores.append(score)
-                        else:
-                            t2_scores.append(score)
+                        continue
 
-                this_series = SeriesData()  # Assuming you've defined a SeriesData class in Python
-                this_series.team1 = team1
-                this_series.team2 = team2
-                this_series.round = current_round
-                this_series.tournament = tournament_name
-                this_series.t1_scores = t1_scores
-                this_series.t2_scores = t2_scores
-                this_series.division = division
-                series.append(this_series)
+                    try:
+                        score_elements = series_element.find_element(By.CLASS_NAME, "games-container").find_elements(By.CSS_SELECTOR, "[type='number']")
+                    except Exception:
+                        continue
 
-                # Now adding each individual game from the series
-                for k, (t1_score, t2_score) in enumerate(zip(t1_scores, t2_scores)):
-                    this_game = GameData()  # Assuming you've defined a GameData class in Python
-                    this_game.team1 = team1
-                    this_game.team2 = team2
-                    this_game.t1_points = t1_score
-                    this_game.t2_points = t2_score
-                    this_game.tournament_name = tournament_name
-                    this_game.tournament_stage = f"Bracket play round of {current_round} game {k+1}"
-                    this_game.division = division
-                    games.append(this_game)
+                    team1 = team_name_elements[0].text
+                    team2 = team_name_elements[1].text
+
+                    t1_scores = []
+                    t2_scores = []
+
+                    for k, score_element in enumerate(score_elements):
+                        try:
+                            score = int(score_element.get_attribute("value"))
+                            if k % 2 == 0:
+                                t1_scores.append(score)
+                            else:
+                                t2_scores.append(score)
+                        except Exception:
+                            score = -1
+                            if k % 2 == 0:
+                                t1_scores.append(score)
+                            else:
+                                t2_scores.append(score)
+
+                    this_series = SeriesData()  # Assuming you've defined a SeriesData class in Python
+                    this_series.team1 = team1
+                    this_series.team2 = team2
+                    this_series.round = current_round
+                    this_series.tournament = tournament_name
+                    this_series.t1_scores = t1_scores
+                    this_series.t2_scores = t2_scores
+                    this_series.division = division
+                    series.append(this_series)
+
+                    # Now adding each individual game from the series
+                    for k, (t1_score, t2_score) in enumerate(zip(t1_scores, t2_scores)):
+                        this_game = GameData()  # Assuming you've defined a GameData class in Python
+                        this_game.team1 = team1
+                        this_game.team2 = team2
+                        this_game.t1_points = t1_score
+                        this_game.t2_points = t2_score
+                        this_game.tournament_name = tournament_name
+                        this_game.tournament_stage = f"Bracket play round of {current_round} game {k+1}"
+                        this_game.division = division
+                        games.append(this_game)
+        except:
+            pass
         return games, series
 
 
 if __name__ == "__main__":
     scraper = FwangoScraper("sts")
     scraper.run([
-            "saltlakecity2023",
-            # "richmond2023",
+            # "saltlakecity2023",
+            "richmond2023",
             # ...
             # "etsprague2023",
             # "tograndslam2023"
