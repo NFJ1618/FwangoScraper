@@ -684,7 +684,7 @@ class FwangoScraper:
 
 
 if __name__ == "__main__":
-    scraper = FwangoScraper("sts")
+    scraper = FwangoScraper("data/sts")
     scraper.run([
             # "saltlakecity2023",
             "richmond2023",

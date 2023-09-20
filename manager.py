@@ -105,7 +105,7 @@ ets = [
 ]
 
 if __name__ == '__main__':
-    tourney_path = "misc"
+    tourney_path = "data/misc"
     scraper = FwangoScraper(tourney_path)
     scraper.run(misc)
     
