@@ -7,16 +7,17 @@ import random
 from unidecode import unidecode
 # Initial player ratings
 import sys
-from helpers import predict, game_regularization
+from helpers import predict_points, predict_wins, game_regularization
 
-class Ratings:
-    def __init__(self) -> None:
+class DefaultDict:
+    def __init__(self, default_value) -> None:
         self.ratings = {}
+        self.default_value = default_value
         
     def __getitem__(self, index):
 	    # Your Implementation
         if index not in self.ratings:
-            self.ratings[index] = 100
+            self.ratings[index] = self.default_value
         return self.ratings[index]
     
     def __setitem__(self, key, value):
@@ -27,12 +28,13 @@ class Ratings:
         return self.ratings.items()
 
 class Model:
-    def __init__(self, file, points: bool, learning_rate = 5, rating_regularization = 0.001, decay=1, test_size=0.1, k=0.1, a=46, test=True, game_reg=True, pow_factor=100, w=0.7):
+    def __init__(self, file, points: bool, learning_rate = 5, rating_regularization = 0.001, decay=1, test_size=0.1, k=0.1, a=46, test=True, game_reg=True, pow_factor=100, w=0.7, sigmoid_coef=0.1):
         self.test = test
-        self.ratings = Ratings()
+        self.ratings = DefaultDict(100)
         self.lr = learning_rate
         self.decay = decay
         self.pow_factor = pow_factor
+        self.sigmoid_coef = sigmoid_coef
         self.w = w
         self.k=0.1
         self.a=46
@@ -61,9 +63,7 @@ class Model:
     
         self.points = points
         self.rate_reg = rating_regularization
-        self.games = {
-            
-        }
+        self.games = DefaultDict(0)
 
         with open(file, encoding='utf-8') as f:
             self.data = pd.read_csv(f)
@@ -83,10 +83,7 @@ class Model:
             team2_p1, team2_p2 = team2.split(', ')
             a = [team1_p1, team1_p2, team2_p1, team2_p2]
             for i in a:
-                if i in self.games:
-                    self.games[i] += 1
-                else:
-                    self.games[i] = 1
+                self.games[i] += 1
 
 
     def update_ratings(self, team1_p1, team1_p2, team2_p1, team2_p2, predicted, actual, category):
@@ -129,10 +126,10 @@ class Model:
             team2_weak = team2_p1
 
         # Update ratings with proportionality applied
-        self.ratings[team1_strong] = self.ratings[team1_strong] + dynamic_lr * error * team1_weight * stronger_factor
-        self.ratings[team1_weak] = self.ratings[team1_weak] + dynamic_lr * error * team1_weight * weaker_factor
-        self.ratings[team2_strong] = self.ratings[team2_strong] - dynamic_lr * error * team2_weight * stronger_factor
-        self.ratings[team2_weak] = self.ratings[team2_weak] - dynamic_lr * error * team2_weight * weaker_factor
+        self.ratings[team1_strong] = self.ratings[team1_strong] + dynamic_lr * error * team1_weight * stronger_factor - self.rate_reg * (self.ratings[team1_strong]-100)
+        self.ratings[team1_weak] = self.ratings[team1_weak] + dynamic_lr * error * team1_weight * weaker_factor - self.rate_reg * (self.ratings[team1_weak]-100)
+        self.ratings[team2_strong] = self.ratings[team2_strong] - dynamic_lr * error * team2_weight * stronger_factor - self.rate_reg * (self.ratings[team1_strong]-100)
+        self.ratings[team2_weak] = self.ratings[team2_weak] - dynamic_lr * error * team2_weight * weaker_factor - self.rate_reg * (self.ratings[team1_weak]-100)
 
         return error
 
@@ -152,11 +149,11 @@ class Model:
 
                 
                 if self.points:
-                    preds = predict(self.ratings[team1_p1], self.ratings[team1_p2], self.ratings[team2_p1], self.ratings[team2_p2], self.pow_factor, self.w)
+                    preds = predict_points(self.ratings[team1_p1], self.ratings[team1_p2], self.ratings[team2_p1], self.ratings[team2_p2], self.pow_factor, self.w)
                     pred = preds[0]
                     outcome = team1_score/(team1_score+team2_score)
                 else:
-                    preds = predict(self.ratings[team1_p1], self.ratings[team1_p2], self.ratings[team2_p1], self.ratings[team2_p2], self.pow_factor, self.w)
+                    preds = predict_wins(self.ratings[team1_p1], self.ratings[team1_p2], self.ratings[team2_p1], self.ratings[team2_p2], self.sigmoid_coef, self.w)
                     pred = preds[0]
                     outcome = team1_score
                 train_loss += np.abs(self.update_ratings(team1_p1, team1_p2, team2_p1, team2_p2, pred, outcome, category))
@@ -177,11 +174,11 @@ class Model:
                     team1_p1, team1_p2 = team1.split(', ')
                     team2_p1, team2_p2 = team2.split(', ')
                     if self.points:
-                        preds = predict(self.ratings[team1_p1], self.ratings[team1_p2], self.ratings[team2_p1], self.ratings[team2_p2], self.pow_factor, self.w)
+                        preds = predict_points(self.ratings[team1_p1], self.ratings[team1_p2], self.ratings[team2_p1], self.ratings[team2_p2], self.sigmoid_coef, self.w)
                         pred = preds[0]
                         outcome = team1_score/(team1_score+team2_score)
                     else:
-                        preds = predict(self.ratings[team1_p1], self.ratings[team1_p2], self.ratings[team2_p1], self.ratings[team2_p2], self.pow_factor, self.w)
+                        preds = predict_wins(self.ratings[team1_p1], self.ratings[team1_p2], self.ratings[team2_p1], self.ratings[team2_p2], self.sigmoid_coef, self.w)
                         pred = preds[0]
                         outcome = team1_score
                     test_loss += np.abs(pred-outcome)
@@ -217,15 +214,15 @@ class Model:
 
 
 if __name__ == '__main__':
-    points = True
+    points = False
     if points:
         infile = '../csv/final_processed_points.csv'
         outfile = '../csv/points_ratings.csv'
     else:
-        infile = '../csv/final_processed_wins.csv'
-        outfile = '../csv/wins_ratings.csv'
+        infile = '../csv/final_processed_wins_sts_only.csv'
+        outfile = '../csv/wins_ratings_sts_only.csv'
     
     
-    model = Model(infile, points=points, k=0.04, a=100, test=False, game_reg=True, test_size=0.3, pow_factor=100, w=0.5)
-    model.train(100)
+    model = Model(infile, points=points, k=0.04, a=100, rating_regularization=0.0001*1, test=True, game_reg=True, test_size=0.05, pow_factor=100, w=0.5, sigmoid_coef=0.19)
+    model.train(400)
     model.output(outfile)

@@ -21,3 +21,17 @@ def bucket_divisions(filtered_df):
 
     filtered_df['Category'] = np.select(conditions, choices, default='Other')
     return filtered_df
+
+
+
+
+def fix_1_more_bug(s):
+    maps = {
+        "1 more, ": "",
+        "gabe finocchi": "gabriel finocchi",
+        "coleman epperson's": "coleman epperson"
+    }
+    for i in maps.keys():
+        if i in s:
+            s = s.replace(i, maps[i])
+    return s

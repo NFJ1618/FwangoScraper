@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 import numpy as np
-from helpers import bucket_divisions
+from helpers import bucket_divisions, fix_1_more_bug
 
 augment = True
 
@@ -15,13 +15,17 @@ dirs = [
     'pra',
     'rotc',
     'sts',
-    'tasr'
+    'tasr',
+    'bcr',
+    'gwr',
+    'psr',
+    'ura'
 ]
 
 dfs = []
 
 for d in dirs:
-    for root, dirs, files in os.walk(f"data/{d}"):
+    for root, dirs, files in os.walk(f"../data/{d}"):
         for file in files:
             if file == 'games.csv':
                 filepath = os.path.join(root, file)
@@ -33,10 +37,10 @@ merged_dfs = pd.concat(dfs)
 
 og_tourney_names = set(merged_dfs['Tournament Name'].unique())
 
-should_contain = ['4', '5.0', 'Premier', 'Contender', 'NHZ', 'Gold', 'Challenger', 'Expert']
+should_contain = ['4', '5.0', 'Premier', 'Contender', 'NHZ', 'Gold', 'Challenger', 'Expert', 'Advanced']
 
 # Strings that shouldn't be present
-should_not_contain = ['Women', 'Mixed']
+should_not_contain = ['Women', 'Mixed', 'Coed', '2']
 
 # Filtering the DataFrame
 mask = merged_dfs['Division'].str.contains('|'.join(should_contain))
@@ -67,21 +71,23 @@ if augment:
 else:
     filtered_df5 = filtered_df[(filtered_df['Score 1'] > 0) & (filtered_df['Score 2'] > 0)]
 
+# print(filtered_df5[filtered_df5['Score 1']==filtered_df5['Score 2']]['Score 1'])
+
+filtered_df5 = filtered_df5[filtered_df5['Score 1']!=filtered_df5['Score 2']]
+
 assert filtered_df5[filtered_df5['Score 1']==filtered_df5['Score 2']].empty
 
 filtered_df5['New Score 1'] = filtered_df5['Score 1']
 filtered_df5['New Score 2'] = filtered_df5['Score 2']
 
+
+filtered_df5.to_csv('../csv/half_processed_points.csv')
+
 final_df = filtered_df5[['Players 1', 'Players 2', 'New Score 1', 'New Score 2', 'Category']]
 
 print(final_df.shape)
 
-def fix_1_more_bug(s):
-    if "1 more, " in s:
-        return s.replace("1 more, ", "")
-    elif "gabe finocchi" in s:
-        return s.replace("gabe finocchi", "gabriel finocchi")
-    return s
+
 
 
 final_df['Players 1'] = final_df['Players 1'].map(fix_1_more_bug)

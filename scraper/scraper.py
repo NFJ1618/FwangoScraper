@@ -16,17 +16,29 @@ import os
 
 #setTimeout(() => { debugger; }, 5000)
 
-POOL_PLAY_XPATH = "//*[@id='root']/span/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div/div/div/nav/ul[2]/li[3]/div/a"
-BRACKET_XPATH = "//*[@id=\"root\"]/span/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div/div/div/nav/ul[2]/li[4]/div/a/span/i"
+
+xpaths = [
+    "//*[@id='root']/span/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div/div/div/nav/ul[2]/li[3]/div/a/span/i",
+    "//*[@id='root']/span/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div/div/div/nav/ul[2]/li[4]/div/a/span/i",
+    "//*[@id='root']/span/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div/div/div/nav/ul[2]/li[2]/div/a/span/i",
+    "//*[@id='root']/span/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div/div/div/nav/ul[2]/li[1]/div/a/span/i"
+]
 
 class FwangoScraper:
-    def __init__(self, tourney_path) -> None:        
+    def __init__(self, tourney_path) -> None:      
+        # if swap_bracket_and_pool:
+        #     self.POOL_PLAY_XPATH = BRACKET_XPATH
+        #     self.BRACKET_XPATH = POOL_PLAY_XPATH
+        # else:
+        #     self.POOL_PLAY_XPATH = POOL_PLAY_XPATH
+        #     self.BRACKET_XPATH = BRACKET_XPATH
         self.this_tournaments_react_number = 2
         self.quiet = False
         self.tournament_specific_team_player_mappings = {}
         self.width = 1450
         self.height = 1400
         self.tourney_path = tourney_path
+        self.BRACKET_PLAY_XPATH, self.POOL_PLAY_XPATH, self.HOME_XPATH, self.RESULTS_XPATH = "", "", "", ""
 
     def run(self, tournaments):
         # Set up ChromeDriver automatically
@@ -92,6 +104,24 @@ class FwangoScraper:
         print(f"{len(tournament_names)} tournaments took {program_elapsed_time * 1000} milliseconds")
         driver.quit()
         
+    def set_xpaths(self, driver):
+        for path in xpaths:
+            a = driver.find_elements(By.XPATH, path)
+            if a:
+                if a[0].get_attribute("class") == "far fa-list-alt fa-fw":
+                    if not self.POOL_PLAY_XPATH:
+                        self.POOL_PLAY_XPATH = path
+                elif a[0].get_attribute("class") == "fas fa-project-diagram fa-fw":
+                    if not self.BRACKET_PLAY_XPATH:
+                        self.BRACKET_PLAY_XPATH = path
+                elif a[0].get_attribute("class") == "fas fa-home fa-fw":
+                    if not self.HOME_XPATH:
+                        self.HOME_XPATH = path
+                elif a[0].get_attribute("class") == "fas fa-trophy fa-fw":
+                    if not self.RESULTS_XPATH:
+                        self.RESULTS_XPATH = path
+        
+
 
     def print_data(self, team_objects, division_team_results, games, series):
         for team in team_objects:
@@ -156,6 +186,8 @@ class FwangoScraper:
 
             # Wait for the page to fully load
             WebDriverWait(driver, 30).until(lambda driver: driver.execute_script("return document.readyState") == "complete")
+            time.sleep(1)
+            self.set_xpaths(driver)
 
             # Get tournament date
             tourney_date_element = driver.find_element(By.CLASS_NAME, "date")
@@ -229,8 +261,6 @@ class FwangoScraper:
         player_team_names = player_team_names[::-1]
         for i in divisions:
             name, num = i.split('\n')
-            if name.lower() == 'free agent':
-                break
             num = int(num.strip('()'))
             divs.append(name)
             number_in_div.append(num)
@@ -239,6 +269,9 @@ class FwangoScraper:
                 if player_team_names:
                     players.append(player_team_names.pop())
             split.append(players)
+        # free_agent = divs.index('Free Agent')
+        # divs.pop(free_agent)
+        # split.pop(free_agent)
         return divs, split
 
 
@@ -304,8 +337,8 @@ class FwangoScraper:
                         time.sleep(0.3)
                         option_element = driver.find_element(By.ID, element_id)
                         division = option_element.text
-                        if division.lower() == "free agent":
-                            continue
+                        # if division.lower() == "free agent":
+                        #     continue
                         option_element.click()
                         self.this_tournaments_react_number = j
                         found_react_number = True
@@ -323,6 +356,8 @@ class FwangoScraper:
 
     def get_results_data(self, driver, team_results, division, tournament):
         # These will all match in terms of order of items
+        if division.lower() == 'free agent':
+            return
         team_name_elements = driver.find_elements(By.CLASS_NAME, "team-name")
         record_elements = driver.find_elements(By.CLASS_NAME, "record-column")
         rank_elements = driver.find_elements(By.CSS_SELECTOR, "td.rank-column")
@@ -360,7 +395,7 @@ class FwangoScraper:
             time.sleep(2)
 
             # Locate the pool play button element
-            pool_play_button = driver.find_element(By.XPATH, POOL_PLAY_XPATH)
+            pool_play_button = driver.find_element(By.XPATH, self.POOL_PLAY_XPATH)
             pool_play_button.click()
             time.sleep(1)
 
@@ -385,14 +420,20 @@ class FwangoScraper:
                     time.sleep(0.1)
                     option_element = driver.find_element(By.ID, element_id)
                     division = option_element.text
-                    if division.lower() == "free agent":
-                        break
+                    # if division.lower() == "free agent":
+                    #     option_element.click()
+                    #     slot += 1
+                    #     continue
                     option_element.click()
                     time.sleep(1)
                     games = []
 
                     # Scroll and load more content
-                    container = driver.find_element(By.CSS_SELECTOR, "#body-scroll > div > div > div.infinite-scroll-component__outerdiv")
+                    try:
+                        container = driver.find_element(By.CSS_SELECTOR, "#body-scroll > div > div > div.infinite-scroll-component__outerdiv")
+                    except:
+                        slot += 1
+                        continue
 
                     # while time.time() - start_time < duration_secs:
                     
@@ -445,26 +486,26 @@ class FwangoScraper:
         for i in range(len(team_elements)):
             name_elements = team_elements[i].find_elements(By.CLASS_NAME, "team-name")
             score_element = point_elements[i].find_elements(By.CSS_SELECTOR, "[type='number']")
-            this_game = GameData()  # Assuming GameData is a class you've defined
-
-            try:
-                this_game.team1 = name_elements[0].text
-            except:
-                pass
-            try:
-                this_game.team2 = name_elements[1].text
-            except:
-                pass
-            try:
-                this_game.t1_points = int(score_element[0].get_attribute("value"))
-                this_game.t2_points = int(score_element[1].get_attribute("value"))
-            except:
-                pass
-            this_game.division = division
-            this_game.tournament_stage = "Pool Play"
-            this_game.tournament_name = tournament_name
-            this_game.division = division
-            games.append(this_game)
+            these_games = [GameData() for i in range(len(score_element)//2)]
+            for i, this_game in enumerate(these_games):
+                try:
+                    this_game.team1 = name_elements[0].text
+                except:
+                    pass
+                try:
+                    this_game.team2 = name_elements[1].text
+                except:
+                    pass
+                try:
+                    this_game.t1_points = int(score_element[2*i].get_attribute("value"))
+                    this_game.t2_points = int(score_element[2*i+1].get_attribute("value"))
+                except:
+                    pass
+                this_game.division = division
+                this_game.tournament_stage = "Pool Play"
+                this_game.tournament_name = tournament_name
+                this_game.division = division
+            games.extend(these_games)
 
 
     def process_bracket_play(self, driver, url, tournament_name, all_games, all_series):
@@ -474,16 +515,15 @@ class FwangoScraper:
             time.sleep(2)
             
             # Locate the bracket play button element
-            bracket_play_button = driver.find_element(By.XPATH, BRACKET_XPATH)
+            bracket_play_button = driver.find_element(By.XPATH, self.BRACKET_PLAY_XPATH)
             bracket_play_button.click()
             time.sleep(1)
             self.zoom_out(driver)
             time.sleep(0.1)
-            dropdown_button, draw_button = driver.find_elements(By.CLASS_NAME, "select-input-container")
-            
+            buttons = driver.find_elements(By.CLASS_NAME, "select-input-container")
             # dropdown_button.click()
             # draw_button.send_keys(Keys.RETURN)
-            self.bracket_play_helper(driver, dropdown_button, draw_button, all_games, all_series, tournament_name)
+            self.bracket_play_helper(driver, buttons, all_games, all_series, tournament_name)
             # self.zoom_in(driver)
         except Exception as e:
             # self.zoom_out(driver)
@@ -508,7 +548,7 @@ class FwangoScraper:
         
             
 
-    def bracket_play_helper(self, driver, dropdown_button, draw_button, all_games, all_series, tournament_name):
+    def bracket_play_helper(self, driver, buttons, all_games, all_series, tournament_name):
         
         
         try:
@@ -534,6 +574,7 @@ class FwangoScraper:
                 
                 try:
                     # Click on the dropdown button
+                    dropdown_button = buttons[0]
                     dropdown_button.click()
                     time.sleep(0.1)
 
@@ -554,6 +595,8 @@ class FwangoScraper:
                     #
                     
                     if division.lower() == "free agent":
+                        option_element.click()
+                        div_index += 1
                         continue
                     
                     try:
@@ -569,7 +612,10 @@ class FwangoScraper:
                         while second_element_found:
                             second_element_id = f"react-select-{self.this_tournaments_react_number+1}-option-{bracket_index}-{draw_index}" 
                             try:
-                                dropdown_button, draw_button = driver.find_elements(By.CLASS_NAME, "select-input-container") 
+                                buttons = driver.find_elements(By.CLASS_NAME, "select-input-container")
+                                if len(buttons) < 2:
+                                    break
+                                draw_button = buttons[1]
                                 draw_button.click()
                                 time.sleep(0.1)
                                 second_option_element = driver.find_element(By.ID, second_element_id)
